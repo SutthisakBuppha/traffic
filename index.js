@@ -6,8 +6,21 @@ const config = {
     channelAccessToken: process.env.CHANNEL_ACCESS_TOKEN,
     channelSecret: process.env.CHANNEL_SECRET,
 };
+
+// ✅ เปลี่ยนชื่อ class ให้เข้าใจง่าย
+const classNames = [
+    'หยุด (STOP)',
+    'จำกัดความเร็ว (Speed Limit)',
+    'ทางม้าลาย (Pedestrian Crossing)',
+    'ห้ามกลับรถ (U-Turn)',
+    'เลี้ยว (Turn)',
+    'ห้ามเลี้ยว (No Turn)',
+    'โดยเฉพาะ (Especially)',
+    'มีเกาะกลางถนน (Dividers)',
+    'ทางเบี่ยง (Detour)'
+];
+
 const modelUrl = 'https://teachablemachine.withgoogle.com/models/kRF8-mnf8/model.json';
-const classNames = ['STOP', 'speed limit ', 'PEDESTRIAN CROSSING', 'U TURN', 'TURN', 'NO TURN', 'especially', 'dividers', 'detour'];
 
 const app = express();
 const client = new line.Client(config);
@@ -26,29 +39,21 @@ async function handleEvent(event) {
     if (event.type !== 'message' || event.message.type !== 'image') {
         return Promise.resolve(null);
     }
+
     try {
         const imageBuffer = await getImageBufferFromLine(event.message.id);
 
-        // ===============================================================
-        // ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼
-        //                  >>> จุดที่แก้ไข <<<
-        //       เพิ่ม .div(tf.scalar(127.5)).sub(tf.scalar(1))
-        //   เพื่อปรับค่าสีของรูปภาพให้เหมือนกับตอนที่เทรนโมเดล
-        // ===============================================================
-
+        // ✅ ปรับภาพให้เหมือนกับตอน train
         const imageTensor = tf.node.decodeImage(imageBuffer, 3)
             .resizeNearestNeighbor([224, 224])
             .toFloat()
-            .div(tf.scalar(127.5)) // <-- เพิ่มบรรทัดนี้
-            .sub(tf.scalar(1))     // <-- และบรรทัดนี้
+            .div(tf.scalar(127.5))
+            .sub(tf.scalar(1))
             .expandDims();
-
-        // ===============================================================
-        // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
-        // ===============================================================
 
         const predictionResult = await model.predict(imageTensor).data();
 
+        // ✅ หาค่าที่มีความแม่นยำมากที่สุด
         let bestPrediction = { className: 'ไม่รู้จัก', probability: 0 };
         for (let i = 0; i < predictionResult.length; i++) {
             if (predictionResult[i] > bestPrediction.probability) {
@@ -58,12 +63,32 @@ async function handleEvent(event) {
         }
 
         const confidence = Math.round(bestPrediction.probability * 100);
-        const replyText = `ฉันคิดว่ารูปนี้คือ "${bestPrediction.className}" นะ! (ความแม่นยำ ${confidence}%)`;
 
-        return client.replyMessage(event.replyToken, { type: 'text', text: replyText });
+        // ✅ ปรับข้อความให้ดูดีขึ้น
+        let replyText = '';
+        if (confidence < 40) {
+            replyText =
+                `🤔 ฉันไม่มั่นใจว่ารูปภาพนี้คือป้ายอะไรเลยค่ะ\n` +
+                `📸 ลองถ่ายรูปใหม่ให้ชัดเจนมากขึ้น แล้วส่งมาอีกครั้งนะคะ`;
+        } else {
+            replyText =
+                `🔍 *ผลการวิเคราะห์รูปภาพของคุณ:*\n\n` +
+                `📸 ป้ายจราจร: *${bestPrediction.className}*\n` +
+                `🎯 ความแม่นยำ: ${confidence}%\n\n` +
+                `หากไม่ถูกต้อง คุณสามารถลองถ่ายรูปใหม่ให้ชัดขึ้นได้นะครับ 🙂`;
+        }
+
+        return client.replyMessage(event.replyToken, {
+            type: 'text',
+            text: replyText,
+        });
+
     } catch (error) {
         console.error(error);
-        return client.replyMessage(event.replyToken, { type: 'text', text: 'ขออภัยค่ะ เกิดข้อผิดพลาดบางอย่าง' });
+        return client.replyMessage(event.replyToken, {
+            type: 'text',
+            text: 'ขออภัยค่ะ เกิดข้อผิดพลาดบางอย่าง 😥',
+        });
     }
 }
 
@@ -81,15 +106,15 @@ function getImageBufferFromLine(messageId) {
 
 async function startServer() {
     try {
-        console.log('Loading model...');
+        console.log('📦 กำลังโหลดโมเดล...');
         model = await tf.loadLayersModel(modelUrl);
-        console.log('Model loaded!');
+        console.log('✅ โหลดโมเดลสำเร็จ!');
         const port = process.env.PORT || 3000;
         app.listen(port, () => {
-            console.log(`Bot is ready on port ${port}`);
+            console.log(`🚀 Bot is ready on port ${port}`);
         });
     } catch (error) {
-        console.error('Failed to load model:', error);
+        console.error('❌ โหลดโมเดลล้มเหลว:', error);
     }
 }
 
